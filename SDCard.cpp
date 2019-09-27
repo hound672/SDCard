@@ -6,11 +6,10 @@
 #include "wdt.h"
 
 // ======================================================================
-//static const SPIExt_Index spidevSDFlash = (SPIExt_Index)(SPIExt_DevSDCard|SPIExt_Make_ClkDiv(2)|SPIExt_CPolHigh|SPIExt_CPha2Edge);
-#define spidevSDCard	spi_dev_SDCard
+static const SPIExt_Index spidevSDFlash = (SPIExt_Index)(SPIExt_DevSDCard|SPIExt_Make_ClkDiv(2)|SPIExt_CPolHigh|SPIExt_CPha2Edge);
 // ======================================================================
-#define SELECT_CARD     SPI_Switch_CS(spidevSDCard, true);
-#define DESELECT_CARD   SPI_Switch_CS(spidevSDCard, false);
+#define SELECT_CARD     SPI_Switch_CS(spidevSDFlash, true);
+#define DESELECT_CARD   SPI_Switch_CS(spidevSDFlash, false);
 // ======================================================================
 
 CSDCard::CSDCard():
@@ -25,20 +24,20 @@ CSDCard::CSDCard():
 // ======================================================================
 
 /**
-  * @brief  Инициализация SD карты
+  * @brief  РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ SD РєР°СЂС‚С‹
   * @param
-  * @retval 1: в случае упешной инициализации
+  * @retval 1: РІ СЃР»СѓС‡Р°Рµ СѓРїРµС€РЅРѕР№ РёРЅРёС†РёР°Р»РёР·Р°С†РёРё
   */
 int CSDCard::init()
 {
   int res;
 
-  // инициализируем шину SPI
+  // РёРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј С€РёРЅСѓ SPI
   if (!this->powerUp()) {
     return -__LINE__;
   }
 
-  // отправляем синхропосылку
+  // РѕС‚РїСЂР°РІР»СЏРµРј СЃРёРЅС…СЂРѕРїРѕСЃС‹Р»РєСѓ
   if ((res = this->sendSyncMess()) < 0) {
     return res;
   }
@@ -73,7 +72,7 @@ int CSDCard::init()
   }
 
   u8 buf[4];
-  SPI_ReadBuffer(spidevSDCard, buf, _dim(buf));
+  SPI_ReadBuffer(spidevSDFlash, buf, _dim(buf));
 
   DESELECT_CARD
 
@@ -87,7 +86,7 @@ int CSDCard::init()
 }
 
 /**
-  * @brief  Выдает кол-во блоков
+  * @brief  Р’С‹РґР°РµС‚ РєРѕР»-РІРѕ Р±Р»РѕРєРѕРІ
   * @param
   * @retval
   */
@@ -105,7 +104,7 @@ u32 CSDCard::getBlockCount()
 }
 
 /**
-  * @brief  Читаем блок данных
+  * @brief  Р§РёС‚Р°РµРј Р±Р»РѕРє РґР°РЅРЅС‹С…
   * @param
   * @retval
   */
@@ -118,20 +117,49 @@ int CSDCard::readBlock(u8 *data, u32 address)
     return -__LINE__;
   }
 
-  while (SPI_SendRecvByte(spidevSDCard, 0xFF) == 0xFF) {
-    WDT_Restart();
-  }
+	waitUntilDone();
 
-//	SPI_ReadBuffer(spidevSDCard, data, 512); // БЕЗ DMA!!!
 	u8 buf[dataBlockSize];
 	memset(buf, 0xFF, dataBlockSize);
-	SPI_SendRecv(spidevSDCard, buf, data, dataBlockSize, false);
+	SPI_SendRecv(spidevSDFlash, buf, data, dataBlockSize, false);
 
-  SPI_SendRecvByte(spidevSDCard, 0xFF);
-  SPI_SendRecvByte(spidevSDCard, 0xFF);
+  SPI_SendRecvByte(spidevSDFlash, 0xFF);
+  SPI_SendRecvByte(spidevSDFlash, 0xFF);
 
   DESELECT_CARD
-  return 1;
+	return 1;
+}
+
+// ======================================================================
+
+/**
+	* @brief	Р—Р°РїРёСЃСЊ РґР°РЅРЅС‹С… РЅР° SD РєР°СЂС‚Сѓ
+	* @param
+	* @retval
+	*/
+int CSDCard::writeBlock(const u8 *data, u32 address)
+{
+	SELECT_CARD
+
+	if (this->cardCmd(CMD24, address)) {
+		DESELECT_CARD
+		return -__LINE__;
+	}
+
+	SPI_SendRecvByte(spidevSDFlash, 0xFF); //РѕРґРёРЅ Р±Р°Р№С‚ РѕР¶РёРґР°РЅРёСЏ
+	SPI_SendRecvByte(spidevSDFlash, 0xFE); //РјРµС‚РєР° РЅР°С‡Р°Р»Р° РїР°РєРµС‚Р° РґР°РЅРЅС‹С…
+
+	u8 buf[dataBlockSize];
+	memset(buf, 0xFF, dataBlockSize);
+	SPI_SendRecv(spidevSDFlash, data, buf, dataBlockSize, false);
+
+	SPI_SendRecvByte(spidevSDFlash, 0x00); // 1-С‹Р№ Р±Р°Р№С‚ CRC
+	SPI_SendRecvByte(spidevSDFlash, 0x00); // 2-РѕР№ Р±Р°Р№С‚ CRC
+
+	waitUntilDone();
+
+	DESELECT_CARD
+	return 1;
 }
 
 
@@ -142,14 +170,14 @@ int CSDCard::readBlock(u8 *data, u32 address)
 // ======================================================================
 
 /**
-  * @brief  Включение SPI шины для SD карты
+  * @brief  Р’РєР»СЋС‡РµРЅРёРµ SPI С€РёРЅС‹ РґР»СЏ SD РєР°СЂС‚С‹
   * @param
   * @retval
   */
 bool CSDCard::powerUp()
 {
-  if ( SPI_IsInit(spidevSDCard) ) return true;
-  if ( SPI_Init2(spidevSDCard) < 0 ) return false;
+  if ( SPI_IsInit(spidevSDFlash) ) return true;
+  if ( SPI_Init2(spidevSDFlash) < 0 ) return false;
   return true;
 }
 
@@ -162,7 +190,7 @@ bool CSDCard::powerUp()
 // ======================================================================
 
 /**
-  * @brief  Ожидаем готовности SD карты
+  * @brief  РћР¶РёРґР°РµРј РіРѕС‚РѕРІРЅРѕСЃС‚Рё SD РєР°СЂС‚С‹
   * @param
   * @retval
   */
@@ -170,15 +198,29 @@ void CSDCard::waitUntilReady()
 {
   u8 res = 0x00;
   while (res != 0xFF) {
-    res = SPI_SendRecvByte(spidevSDCard, 0xFF);
+    res = SPI_SendRecvByte(spidevSDFlash, 0xFF);
     WDT_Restart();
-  }
+	}
+}
+
+// ======================================================================
+
+/**
+	* @brief	РћР¶РёРґР°РЅРёРµРј РѕРєРѕРЅС‡Р°РЅРёСЏ РїСЂРёРЅСЏС‚РёСЏ РєРѕРјР°РЅРґС‹
+	* @param
+	* @retval
+	*/
+void CSDCard::waitUntilDone()
+{
+	while (SPI_SendRecvByte(spidevSDFlash, 0xFF) == 0xFF) {
+		WDT_Restart();
+	}
 }
 
 /**
-  * @brief  Отправка команды на карту
+  * @brief  РћС‚РїСЂР°РІРєР° РєРѕРјР°РЅРґС‹ РЅР° РєР°СЂС‚Сѓ
   * @param
-  * @retval 0> - успешно. 0< - номер строки, где была ошибка
+  * @retval 0> - СѓСЃРїРµС€РЅРѕ. 0< - РЅРѕРјРµСЂ СЃС‚СЂРѕРєРё, РіРґРµ Р±С‹Р»Р° РѕС€РёР±РєР°
   */
 u8 CSDCard::cardCmd(u8 cmd, u32 arg)
 {
@@ -199,13 +241,13 @@ u8 CSDCard::cardCmd(u8 cmd, u32 arg)
   SELECT_CARD
   this->waitUntilReady();
 
-  SPI_SendBuffer(spidevSDCard, cmdBuf, _dim(cmdBuf));
+  SPI_SendBuffer(spidevSDFlash, cmdBuf, _dim(cmdBuf));
 
   int cnt = 0;
   u8 rsp;
 
   do {
-    rsp = SPI_SendRecvByte(spidevSDCard, 0xFF);
+    rsp = SPI_SendRecvByte(spidevSDFlash, 0xFF);
   } while (rsp & 0x80 && cnt++ < countTryCardCmd);
 
   if (cnt >= countTryCardCmd) {
@@ -217,7 +259,7 @@ u8 CSDCard::cardCmd(u8 cmd, u32 arg)
 }
 
 /**
-  * @brief  Отправка ACMD команды на SD карту
+  * @brief  РћС‚РїСЂР°РІРєР° ACMD РєРѕРјР°РЅРґС‹ РЅР° SD РєР°СЂС‚Сѓ
   * @param
   * @retval
   */
@@ -228,7 +270,7 @@ u8 CSDCard::cardACmd(u8 cmd, u32 arg)
 }
 
 /**
-  * @brief  Читаем регистр SD карты
+  * @brief  Р§РёС‚Р°РµРј СЂРµРіРёСЃС‚СЂ SD РєР°СЂС‚С‹
   * @param
   * @retval
   */
@@ -239,20 +281,20 @@ int CSDCard::readRegister(u8 cmd, u8 *buf)
     return -__LINE__;
   }
 
-  while (SPI_SendRecvByte(spidevSDCard, 0xFF) == 0xFF) {
+  while (SPI_SendRecvByte(spidevSDFlash, 0xFF) == 0xFF) {
     WDT_Restart();
   }
-  SPI_ReadBuffer(spidevSDCard, buf, 16);
+  SPI_ReadBuffer(spidevSDFlash, buf, 16);
 
-  SPI_SendRecvByte(spidevSDCard, 0xFF);
-  SPI_SendRecvByte(spidevSDCard, 0xFF);
+  SPI_SendRecvByte(spidevSDFlash, 0xFF);
+  SPI_SendRecvByte(spidevSDFlash, 0xFF);
 
   DESELECT_CARD
   return 1;
 }
 
 /**
-  * @brief  Отправляем синхро посылку
+  * @brief  РћС‚РїСЂР°РІР»СЏРµРј СЃРёРЅС…СЂРѕ РїРѕСЃС‹Р»РєСѓ
   * @param
   * @retval
   */
@@ -263,7 +305,7 @@ int CSDCard::sendSyncMess()
   u8 syncMessTx[lenSyncMess];
   memset(syncMessTx, 0xFF, _dim(syncMessTx));
 
-  if (SPI_SendRecv(spidevSDCard, syncMessTx, NULL, _dim(syncMessTx), false) < 0) {
+  if (SPI_SendRecv(spidevSDFlash, syncMessTx, NULL, _dim(syncMessTx), false) < 0) {
     return -__LINE__;
   }
 
@@ -271,7 +313,7 @@ int CSDCard::sendSyncMess()
 }
 
 /**
-  * @brief  Перевод в режим Idle
+  * @brief  РџРµСЂРµРІРѕРґ РІ СЂРµР¶РёРј Idle
   * @param
   * @retval
   */
@@ -285,7 +327,7 @@ int CSDCard::setIdleMode()
 }
 
 /**
-  * @brief  Проверка версии SD карты, поддерживаемая версия 2
+  * @brief  РџСЂРѕРІРµСЂРєР° РІРµСЂСЃРёРё SD РєР°СЂС‚С‹, РїРѕРґРґРµСЂР¶РёРІР°РµРјР°СЏ РІРµСЂСЃРёСЏ 2
   * @param
   * @retval
   */
@@ -296,7 +338,7 @@ int CSDCard::checkSDVer()
     return -__LINE__;
   } else {
     u8 buf[4];
-    SPI_ReadBuffer(spidevSDCard, buf, _dim(buf));
+    SPI_ReadBuffer(spidevSDFlash, buf, _dim(buf));
     if (buf[0] != 0x00 || buf[1] != 0x00 || buf[2] != 0x01 || buf[3] != 0xAA) {
       return -__LINE__;
     }
@@ -306,7 +348,7 @@ int CSDCard::checkSDVer()
 }
 
 /**
-  * @brief  Читает регистр CSD
+  * @brief  Р§РёС‚Р°РµС‚ СЂРµРіРёСЃС‚СЂ CSD
   * @param
   * @retval
   */
