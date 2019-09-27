@@ -1,6 +1,6 @@
 /**
   * @version
-  * @brief    КЉласс для работы с SD картой
+  * @brief    РљР»Р°СЃСЃ РґР»СЏ СЂР°Р±РѕС‚С‹ СЃ SD РєР°СЂС‚РѕР№
   */
 #ifndef SDCARD_H
 #define SDCARD_H
@@ -21,6 +21,7 @@ public:
   u32 getBlockCount();
 
   int readBlock(u8 *data, u32 address);
+	int writeBlock(const u8 *data, u32 address);
 
 protected:
 
@@ -80,7 +81,7 @@ protected:
           unsigned crc :7;
   };
 
-  // список команд
+  // СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ
   enum {
     CMD0 = 0X00,	/** GO_IDLE_STATE - init card in spi mode if CS low */
     CMD8 = 0X08,	/** SEND_IF_COND - verify SD Memory Card interface operating condition.*/
@@ -113,8 +114,8 @@ protected:
   enum {
     dataBlockSize = 512,
     countTryCardCmd = 20,
-    lenSyncMess = 10, // длина синхропосылки
-    lenCmdRequest = 6, // длина команды для SD карты
+    lenSyncMess = 10, // РґР»РёРЅР° СЃРёРЅС…СЂРѕРїРѕСЃС‹Р»РєРё
+    lenCmdRequest = 6, // РґР»РёРЅР° РєРѕРјР°РЅРґС‹ РґР»СЏ SD РєР°СЂС‚С‹
   };
 
 protected:
@@ -126,6 +127,7 @@ protected:
 
 private:
   void waitUntilReady();
+	void waitUntilDone();
   u8 cardCmd(u8 cmd, u32 arg);
   u8 cardACmd(u8 cmd, u32 arg);
   int readRegister(u8 cmd, u8 *buf);
